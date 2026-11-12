@@ -12,3 +12,17 @@ const result = spawnSync(
 );
 if (result.error) throw result.error;
 if (result.status !== 0) process.exit(result.status ?? 1);
+
+const credential = spawnSync(
+  "bun",
+  [
+    "--conditions=eliza-source",
+    "test",
+    "packages/cloud/api/__tests__/voice-speech-rate-limit.pglite.test.ts",
+    "-t",
+    "speech consent retries one credential deadline",
+  ],
+  { stdio: "inherit" },
+);
+if (credential.error) throw credential.error;
+if (credential.status !== 0) process.exit(credential.status ?? 1);
