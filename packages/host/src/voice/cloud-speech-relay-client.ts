@@ -42,6 +42,9 @@ export interface CloudSpeechRelayTransportDiagnostic {
   liveElapsedMs: number | null;
   stage?:
     | "consent_post"
+    | "recovery_journal_write"
+    | "provider_admission_wait"
+    | "prior_session_retirement"
     | "mint_post"
     | "websocket_connect"
     | "relay_ready"
@@ -680,6 +683,24 @@ export async function createCloudSpeechRelayPorts(
       );
     }
   };
+  const timeBootstrap = async <T>(
+    stage: NonNullable<CloudSpeechRelayTransportDiagnostic["stage"]>,
+    run: () => Promise<T>,
+  ): Promise<T> => {
+    const started = performance.now();
+    let outcome: "returned" | "failed" = "failed";
+    try {
+      const result = await run();
+      outcome = "returned";
+      return result;
+    } finally {
+      diagnose("startup", {
+        stage,
+        durationMs: performance.now() - started,
+        outcome,
+      });
+    }
+  };
   const terminate = (error?: Error) => {
     if (closed) return;
     closed = true;
@@ -909,7 +930,8 @@ export async function createCloudSpeechRelayPorts(
       }
       assertCurrent();
     };
-    if (!options.beforeProviderAdmission) await recover();
+    if (journal && !options.beforeProviderAdmission)
+      await timeBootstrap("prior_session_retirement", recover);
     const consent = await request(SPEECH_RELAY_ROUTES.consent, {});
     exact(consent, [
       "consentNonce",
@@ -929,7 +951,9 @@ export async function createCloudSpeechRelayPorts(
       const preparedId = consent.recoverySessionId;
       requireValue(typeof preparedId === "string" && UUID.test(preparedId));
       sessionId = preparedId;
-      journalWrite = journal.record(preparedId);
+      journalWrite = timeBootstrap("recovery_journal_write", () =>
+        journal.record(preparedId),
+      );
       await journalWrite;
       assertCurrent();
     }
@@ -937,18 +961,22 @@ export async function createCloudSpeechRelayPorts(
     if (beforeProviderAdmission) {
       // Race the host fence with cancellation so an unclaimed successor cannot
       // retain a pending acquisition (or block host shutdown) indefinitely.
-      await new Promise<void>((resolve, reject) => {
-        const abort = () => reject(lifecycle.signal.reason);
-        lifecycle.signal.throwIfAborted();
-        lifecycle.signal.addEventListener("abort", abort, { once: true });
-        void beforeProviderAdmission()
-          .then(resolve, reject)
-          .finally(() => {
-            lifecycle.signal.removeEventListener("abort", abort);
-          });
-      });
+      await timeBootstrap(
+        "provider_admission_wait",
+        () =>
+          new Promise<void>((resolve, reject) => {
+            const abort = () => reject(lifecycle.signal.reason);
+            lifecycle.signal.throwIfAborted();
+            lifecycle.signal.addEventListener("abort", abort, { once: true });
+            void beforeProviderAdmission()
+              .then(resolve, reject)
+              .finally(() => {
+                lifecycle.signal.removeEventListener("abort", abort);
+              });
+          }),
+      );
       assertCurrent();
-      await recover();
+      if (journal) await timeBootstrap("prior_session_retirement", recover);
       requireValue(Date.parse(String(consent.expiresAt)) > Date.now());
     }
     const minted = await request(SPEECH_RELAY_ROUTES.mint, {
