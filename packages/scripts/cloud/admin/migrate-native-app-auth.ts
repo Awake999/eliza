@@ -41,7 +41,7 @@ export function nativeRegistrySnapshot(source: NativeRegistrySource) {
     !source.callbacks?.trim()
   )
     refuse("complete_source_snapshot_required");
-  if (source.primaryAppId && !UUID.test(source.primaryAppId))
+  if (!source.primaryAppId || !UUID.test(source.primaryAppId))
     refuse("primary_identity");
   const parsed = parseRegisteredMobileClients(source.clients || "[]", {
     ...primary,
@@ -354,7 +354,12 @@ export async function readDeployedNativeCallbacks(input: {
     deployed.environment !== environment ||
     metadata.branch !== branch ||
     stage.name !== "deploy" ||
-    stage.status !== "success"
+    stage.status !== "success" ||
+    (input.environment === "staging" &&
+      (!Array.isArray(deployed.aliases) ||
+        !deployed.aliases.includes(
+          `https://staging.${input.project}.pages.dev`,
+        )))
   )
     refuse("pages_deployment_identity");
   const binding = object(
