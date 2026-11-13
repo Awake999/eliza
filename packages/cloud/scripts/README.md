@@ -5,6 +5,13 @@ workspace imports locally so they do not invalidate unrelated build caches.
 Invoke operations through their documented root commands; run the script test
 lane with `bun run test:scripts` from the repository root.
 
+Staging Stripe catalog updates require the test secret key and all four approved
+Plus/Pro product and monthly price IDs together. An entirely blank source
+preserves the deployed catalog; a partial source refuses the release. The
+read-only catalog preflight checks the complete test catalog before atomic
+publication. Optional webhook and publishable keys are also staging-only;
+production Stripe bindings are not changed by this path.
+
 Native App Auth clients, exact callbacks, Android packages and signing
 fingerprints are registered in the database. Pages resolves native sign-in and
 billing returns through the same Cloud registration. A reviewed database change
