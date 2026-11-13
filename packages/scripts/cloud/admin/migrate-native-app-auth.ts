@@ -27,6 +27,15 @@ export interface NativeRegistrySource {
 function refuse(invariant: string): never {
   throw new Error(`Native client migration refused: ${invariant}`);
 }
+function canonical(value: unknown): string {
+  return JSON.stringify(value, (_, item) =>
+    item && typeof item === "object" && !Array.isArray(item)
+      ? Object.fromEntries(
+          Object.entries(item).sort(([a], [b]) => a.localeCompare(b)),
+        )
+      : item,
+  );
+}
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const primary = {
@@ -187,14 +196,6 @@ export async function migrateNativeRegistry(
         JSON.stringify(found.rows[0]) !== JSON.stringify(record)
       ) {
         // JSONB key ordering is not semantic; compare each structured field canonically.
-        const canonical = (value: unknown): string =>
-          JSON.stringify(value, (_, item) =>
-            item && typeof item === "object" && !Array.isArray(item)
-              ? Object.fromEntries(
-                  Object.entries(item).sort(([a], [b]) => a.localeCompare(b)),
-                )
-              : item,
-          );
         if (
           found.rows.length !== 1 ||
           canonical(found.rows[0]) !== canonical(record)
@@ -203,8 +204,13 @@ export async function migrateNativeRegistry(
       }
     }
     const digest = createHash("sha256")
-      .update(JSON.stringify(snapshot))
+      .update(canonical(snapshot))
       .digest("hex");
+    const inventory = await database.query(
+      "SELECT count(*)::int AS count FROM mobile_app_auth_clients",
+    );
+    if (inventory.rows[0]?.count !== snapshot.length)
+      refuse("unexpected_database_registration");
     const prior = await database.query(
       "SELECT source_digest, client_count FROM mobile_app_auth_registry_migrations WHERE environment=$1",
       [environment],
@@ -262,6 +268,15 @@ export async function verifyNativeRegistryMigration(
   );
   if (retained.rows[0]?.count !== row.client_count)
     refuse("imported_registration_missing");
+  const rows = await database.query(
+    "SELECT client_id,app_id,redirect_uri,enabled,credential_ttl_seconds,android_package_name,android_cert_fingerprints,android_relations,callback_android_package,browser_sign_in FROM mobile_app_auth_clients WHERE client_id = ANY($1::text[]) ORDER BY client_id",
+    [row.client_ids],
+  );
+  if (
+    createHash("sha256").update(canonical(rows.rows)).digest("hex") !==
+    row.source_digest
+  )
+    refuse("imported_registration_changed");
   return { clients: row.client_count, digest: row.source_digest };
 }
 
