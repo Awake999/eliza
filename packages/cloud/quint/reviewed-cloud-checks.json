@@ -539,6 +539,18 @@
         "E2E database-only client lifecycle: asset links -> signin -> exchange -> ack -> verify -> renew -> revoke",
         "Database outage fails closed: rethrows error rather than silently serving stale env fallback"
       ]
+    },
+    {
+      "file": "packages/cloud/api/__tests__/native-callback.pglite.test.ts",
+      "required": [
+        "serves fallback HTML for database-registered client without any environment variable",
+        "immediately reflects client or app renaming without server deployment",
+        "serves native billing return fallback page with session parameters",
+        "returns 404 for un-registered redirect URI",
+        "returns 404 when client is disabled in database",
+        "returns 404 when parent app is unapproved",
+        "Pages uses the current database callback and browser-start registration"
+      ]
     }
   ]
 }

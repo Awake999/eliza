@@ -4,7 +4,10 @@ CREATE TABLE IF NOT EXISTS "mobile_app_auth_clients" (
   "redirect_uri" text NOT NULL,
   "credential_ttl_seconds" integer,
   "android_package_name" text,
+  "callback_android_package" text,
+  "android_relations" jsonb,
   "android_cert_fingerprints" jsonb,
+  "browser_sign_in" jsonb,
   "enabled" boolean DEFAULT true NOT NULL,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL
@@ -19,37 +22,12 @@ CREATE INDEX IF NOT EXISTS "idx_mobile_app_auth_clients_android_package"
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_mobile_app_auth_clients_redirect_uri"
   ON "mobile_app_auth_clients" ("redirect_uri");
+
 --> statement-breakpoint
-DO $$
-DECLARE
-  target_app_id uuid;
-  matching_count integer;
-BEGIN
-  SELECT count(*) INTO matching_count
-  FROM "apps"
-  WHERE "app_url" = 'https://eliza.app'
-     OR "allowed_origins" @> '["https://eliza.app/auth/callback"]'::jsonb;
-
-  IF matching_count >= 1 THEN
-    SELECT "id" INTO target_app_id
-    FROM "apps"
-    WHERE "app_url" = 'https://eliza.app'
-       OR "allowed_origins" @> '["https://eliza.app/auth/callback"]'::jsonb
-    ORDER BY "is_approved" DESC, "is_active" DESC, "created_at" ASC
-    LIMIT 1;
-
-    INSERT INTO "mobile_app_auth_clients" (
-      "client_id",
-      "app_id",
-      "redirect_uri",
-      "android_package_name",
-      "enabled"
-    ) VALUES (
-      'ai.elizaos.app',
-      target_app_id,
-      'https://eliza.app/auth/callback',
-      'ai.elizaos.app',
-      true
-    ) ON CONFLICT ("client_id") DO NOTHING;
-  END IF;
-END $$;
+CREATE TABLE IF NOT EXISTS "mobile_app_auth_registry_migrations" (
+  "environment" text PRIMARY KEY CHECK ("environment" IN ('staging', 'production')),
+  "source_digest" text NOT NULL CHECK ("source_digest" ~ '^[0-9a-f]{64}$'),
+  "client_ids" jsonb NOT NULL,
+  "client_count" integer NOT NULL CHECK ("client_count" > 0),
+  "completed_at" timestamptz NOT NULL DEFAULT now()
+);
