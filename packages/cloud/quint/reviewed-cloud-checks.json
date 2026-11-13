@@ -536,8 +536,17 @@
     {
       "file": "packages/cloud/shared/src/db/repositories/mobile-app-auth-clients.test.ts",
       "required": [
+        "returns registration and app for active enabled client",
+        "returns row with enabled=false for disabled client",
+        "returns null for non-existent client",
         "requires the exact callback in app allowed_origins, not an origin or wildcard",
-        "rejects enabled Android registrations with missing fingerprints"
+        "rejects enabled Android registrations with missing fingerprints",
+        "merges fingerprints across multiple clients for the same package",
+        "finds client by exact redirect URI",
+        "returns null for unknown redirect URI",
+        "admits matching production grant on production environment",
+        "refuses staging grant on production environment",
+        "refuses disabled DB client immediately without fallback"
       ]
     },
     {
