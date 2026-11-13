@@ -566,7 +566,8 @@
         "returns 404 when client is disabled in database",
         "returns 404 when parent app is unapproved",
         "Pages uses the current database callback and browser-start registration",
-        "installed client aliases share one current callback policy and refuse conflicting policies"
+        "installed client aliases share one current callback policy and refuse conflicting policies",
+        "root asset links is limited before database registration lookup"
       ]
     }
   ],
@@ -597,7 +598,8 @@
         "returns 404 when client is disabled in database",
         "returns 404 when parent app is unapproved",
         "Pages uses the current database callback and browser-start registration",
-        "installed client aliases share one current callback policy and refuse conflicting policies"
+        "installed client aliases share one current callback policy and refuse conflicting policies",
+        "root asset links is limited before database registration lookup"
       ]
     }
   ]
