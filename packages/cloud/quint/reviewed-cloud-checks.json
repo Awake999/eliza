@@ -534,6 +534,13 @@
   ],
   "MobileAppClientRegistration.qnt": [
     {
+      "file": "packages/cloud/shared/src/db/repositories/mobile-app-auth-clients.test.ts",
+      "required": [
+        "requires the exact callback in app allowed_origins, not an origin or wildcard",
+        "rejects enabled Android registrations with missing fingerprints"
+      ]
+    },
+    {
       "file": "packages/cloud/api/__tests__/mobile-app-auth-database-lifecycle.pglite.test.ts",
       "required": [
         "E2E database-only client lifecycle: asset links -> signin -> exchange -> ack -> verify -> renew -> revoke",
@@ -562,7 +569,11 @@
         "refuses ambiguous callback ownership before publishing any imported data",
         "rejects partial source associations and refuses to overwrite changed registrations",
         "reads complete callback binding from the deployed staging branch across all deployment pages",
-        "Pages failures report only request stage and numeric provider codes"
+        "Pages failures report only request stage and numeric provider codes",
+        "release adopts a complete preparation import once and permits later reviewed deletion without legacy source",
+        "release imports an absent marker from the complete source and fails closed when first source is unavailable",
+        "release refuses a conflicting identity, unsupported marker version, or incompatible schema",
+        "release refuses to bind a preparation marker after imported rows changed"
       ]
     }
   ],
