@@ -74,7 +74,10 @@ jobs:
         run: |
           set -euo pipefail
           case "$OPERATION" in
-            import) bun --conditions=eliza-source packages/scripts/cloud/admin/migrate-native-app-auth.ts ;;
+            import)
+              bun --conditions=eliza-source packages/scripts/cloud/admin/migrate-native-app-auth.ts
+              bun --conditions=eliza-source packages/scripts/cloud/admin/migrate-native-app-auth.ts --verify
+              ;;
             verify) bun --conditions=eliza-source packages/scripts/cloud/admin/migrate-native-app-auth.ts --verify ;;
             *) echo "::error::Unknown native registration migration operation"; exit 1 ;;
           esac
