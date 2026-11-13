@@ -265,6 +265,115 @@ export async function verifyNativeRegistryMigration(
   return { clients: row.client_count, digest: row.source_digest };
 }
 
+/** Reads the complete callback binding of the deployed canonical Pages branch. */
+export async function readDeployedNativeCallbacks(input: {
+  accountId: string;
+  token: string;
+  project: string;
+  environment: "staging" | "production";
+  fetchImpl?: typeof fetch;
+}): Promise<string> {
+  if (
+    !/^[0-9a-f]{32}$/.test(input.accountId) ||
+    !/^[a-z0-9-]+$/.test(input.project) ||
+    !input.token
+  )
+    refuse("pages_credentials");
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const base = `https://api.cloudflare.com/client/v4/accounts/${input.accountId}/pages/projects/${input.project}`;
+  const object = (value: unknown): Row => {
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      refuse("pages_response");
+    return value as Row;
+  };
+  const read = async (url: string) => {
+    let response: Response;
+    try {
+      response = await fetchImpl(url, {
+        headers: { Authorization: `Bearer ${input.token}` },
+        redirect: "error",
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch {
+      return refuse("pages_transport");
+    }
+    if (!response.ok) refuse(`pages_http_${response.status}`);
+    const payload = object(await response.json());
+    if (payload.success !== true) refuse("pages_api_refused");
+    return payload;
+  };
+  const project = object((await read(base)).result);
+  const branch = input.environment === "production" ? "main" : "staging";
+  const environment =
+    input.environment === "production" ? "production" : "preview";
+  let selected: Row;
+  if (input.environment === "production")
+    selected = object(project.canonical_deployment);
+  else {
+    const matches: Row[] = [];
+    for (let page = 1; ; page++) {
+      const payload = await read(
+        `${base}/deployments?env=preview&per_page=100&page=${page}`,
+      );
+      if (!Array.isArray(payload.result)) refuse("pages_deployments");
+      for (const value of payload.result) {
+        const deployment = object(value);
+        const metadata = object(object(deployment.deployment_trigger).metadata);
+        if (
+          metadata.branch === branch &&
+          deployment.environment === environment &&
+          Array.isArray(deployment.aliases) &&
+          deployment.aliases.includes(
+            `https://staging.${input.project}.pages.dev`,
+          )
+        )
+          matches.push(deployment);
+      }
+      const info = object(payload.result_info);
+      if (
+        typeof info.total_pages !== "number" ||
+        !Number.isInteger(info.total_pages)
+      )
+        refuse("pages_pagination");
+      if (page >= info.total_pages) break;
+    }
+    if (matches.length !== 1 || !matches[0])
+      refuse("pages_current_branch_ambiguous");
+    selected = matches[0];
+  }
+  if (typeof selected.id !== "string" || !/^[a-z0-9-]+$/i.test(selected.id))
+    refuse("pages_deployment_identity");
+  const deployed = object(
+    (await read(`${base}/deployments/${selected.id}`)).result,
+  );
+  const metadata = object(object(deployed.deployment_trigger).metadata);
+  const stage = object(deployed.latest_stage);
+  if (
+    deployed.id !== selected.id ||
+    deployed.project_name !== input.project ||
+    deployed.environment !== environment ||
+    metadata.branch !== branch ||
+    stage.name !== "deploy" ||
+    stage.status !== "success"
+  )
+    refuse("pages_deployment_identity");
+  const binding = object(
+    object(deployed.env_vars).ELIZA_NATIVE_AUTH_CALLBACKS_JSON,
+  );
+  if (
+    binding.type !== "plain_text" ||
+    typeof binding.value !== "string" ||
+    !binding.value.trim()
+  )
+    refuse("pages_callback_binding_unreadable");
+  // The parser validates every entry, even if no callback is selected here.
+  selectNativeAuthCallback(
+    binding.value,
+    new URL("https://unmatched.invalid/"),
+  );
+  return binding.value;
+}
+
 if (import.meta.main) {
   let database: Client | undefined;
   try {
@@ -287,6 +396,15 @@ if (import.meta.main) {
       DATABASE_IDENTITY_ENVIRONMENT: environment,
     });
     await runDatabaseIdentityPreflight(identity, database);
+    const callbacks = process.argv.includes("--verify")
+      ? undefined
+      : process.env.ELIZA_NATIVE_AUTH_CALLBACKS_JSON?.trim() ||
+        (await readDeployedNativeCallbacks({
+          accountId: process.env.CLOUDFLARE_ACCOUNT_ID ?? "",
+          token: process.env.CLOUDFLARE_API_TOKEN ?? "",
+          project: process.env.PAGES_PROJECT ?? "eliza-app",
+          environment,
+        }));
     const result = process.argv.includes("--verify")
       ? await verifyNativeRegistryMigration(database, environment)
       : await migrateNativeRegistry(
@@ -295,7 +413,7 @@ if (import.meta.main) {
             primaryAppId: process.env.ELIZA_MOBILE_APP_AUTH_APP_ID,
             clients: process.env.ELIZA_MOBILE_APP_AUTH_CLIENTS_JSON,
             assetLinks: process.env.ELIZA_ANDROID_ASSET_LINKS_JSON,
-            callbacks: process.env.ELIZA_NATIVE_AUTH_CALLBACKS_JSON,
+            callbacks,
           },
           environment,
         );

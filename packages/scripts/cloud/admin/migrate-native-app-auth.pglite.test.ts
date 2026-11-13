@@ -175,3 +175,48 @@ test("rejects partial source associations and refuses to overwrite changed regis
     await pg.close();
   }
 }, 30_000);
+
+test("reads complete callback binding from the deployed staging branch across all deployment pages", async () => {
+  const { readDeployedNativeCallbacks } = await import(
+    "./migrate-native-app-auth"
+  );
+  const requests: string[] = [];
+  const deployment = {
+    id: "a1111111",
+    project_name: "eliza-app",
+    environment: "preview",
+    aliases: ["https://staging.eliza-app.pages.dev"],
+    deployment_trigger: { metadata: { branch: "staging" } },
+    latest_stage: { name: "deploy", status: "success" },
+    env_vars: {
+      ELIZA_NATIVE_AUTH_CALLBACKS_JSON: {
+        type: "plain_text",
+        value: source.callbacks,
+      },
+    },
+  };
+  const value = await readDeployedNativeCallbacks({
+    accountId: "a".repeat(32),
+    token: "test-token",
+    project: "eliza-app",
+    environment: "staging",
+    fetchImpl: (async (input: string | URL | Request) => {
+      const url = String(input);
+      requests.push(url);
+      const result = url.endsWith("/eliza-app")
+        ? { name: "eliza-app" }
+        : new URL(url).searchParams.get("page") === "1"
+          ? []
+          : new URL(url).searchParams.get("page") === "2"
+            ? [deployment]
+            : deployment;
+      return Response.json({
+        success: true,
+        result,
+        result_info: { total_pages: 2 },
+      });
+    }) as typeof fetch,
+  });
+  expect(value).toBe(source.callbacks);
+  expect(requests).toHaveLength(4);
+});
